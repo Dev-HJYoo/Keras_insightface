@@ -15,9 +15,11 @@ from tensorflow import keras
 gpus = tf.config.experimental.list_physical_devices("GPU")
 for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu, True)
-# strategy = tf.distribute.MirroredStrategy()
-# strategy = tf.distribute.OneDeviceStrategy(device="/gpu:0")
-
+strategy = tf.distribute.MirroredStrategy(devices=['/gpu:0','/gpu:1','/gpu:2','/gpu:3'])
+#print(gpus)
+#print(strategy)
+#strategy = tf.distribute.OneDeviceStrategy(device="/gpu:0")
+import logging
 
 class Train:
     def __init__(
@@ -50,6 +52,26 @@ class Train:
         vpl_allowed_delta=200,
     ):
         from inspect import getmembers, isfunction, isclass
+        
+        # checkpoint setting path
+        from datetime import datetime
+        c_time = datetime.now()
+        checkpoint_path = 'checkpoints/{}_{}_{}H'.format(c_time.month, c_time.day, c_time.hour)
+        self.folder_path = checkpoint_path
+        if not os.path.exists(checkpoint_path):
+            os.mkdir(checkpoint_path)
+        else:
+            checkpoint_path += '2'
+            os.mkdir(checkpoint_path)
+        #logging
+        logging.basicConfig(filename=checkpoint_path + '/' + save_path.split('.')[0] + '.log',
+            level=logging.DEBUG)
+        logging.basicConfig(
+            format='%(asctime)s %(levelname)s:%(message)s',
+            datefmt='%m/%d/%Y %I:%M:%S %p',
+        )
+        logging.warning('checkpoint_path: {}'.format(checkpoint_path))
+        #tf.compat.v1.logging.set_verbosity(tf.logging.INFO)
 
         custom_objects.update(dict([ii for ii in getmembers(losses) if isfunction(ii[1]) or isclass(ii[1])]))
         custom_objects.update({"NormDense": models.NormDense})
@@ -57,12 +79,12 @@ class Train:
         self.model, self.basic_model, self.save_path, self.inited_from_model, self.sam_rho, self.pretrained = None, None, save_path, False, sam_rho, pretrained
         self.vpl_start_iters, self.vpl_allowed_delta = vpl_start_iters, vpl_allowed_delta
         if model is None and basic_model is None:
-            model = os.path.join("checkpoints", save_path)
-            print(">>>> Try reload from:", model)
+	        model = os.path.join(checkpoint_path, save_path)
+            logging.info(">>>> Try reload from:", model)
 
         if isinstance(model, str):
             if model.endswith(".h5") and os.path.exists(model):
-                print(">>>> Load model from h5 file: %s..." % model)
+                logging.info(">>>> Load model from h5 file: %s..." % model)
                 with keras.utils.custom_object_scope(custom_objects):
                     self.model = keras.models.load_model(model, compile=compile, custom_objects=custom_objects)
                 embedding_layer = basic_model if basic_model is not None else self.__search_embedding_layer__(self.model)
@@ -73,17 +95,17 @@ class Train:
             embedding_layer = basic_model if basic_model is not None else self.__search_embedding_layer__(self.model)
             self.basic_model = keras.models.Model(self.model.inputs[0], self.model.layers[embedding_layer].output)
             self.inited_from_model = True
-            print(">>>> Specified model structure, output layer will keep from changing")
+            logging.info(">>>> Specified model structure, output layer will keep from changing")
         elif isinstance(basic_model, str):
             if basic_model.endswith(".h5") and os.path.exists(basic_model):
-                print(">>>> Load basic_model from h5 file: %s..." % basic_model)
+                logging.info(">>>> Load basic_model from h5 file: %s..." % basic_model)
                 with keras.utils.custom_object_scope(custom_objects):
                     self.basic_model = keras.models.load_model(basic_model, compile=compile, custom_objects=custom_objects)
         elif isinstance(basic_model, keras.models.Model):
             self.basic_model = basic_model
 
         if self.basic_model == None:
-            print(
+            logging.info(
                 "Initialize model by:\n"
                 "| basic_model                                                     | model           |\n"
                 "| --------------------------------------------------------------- | --------------- |\n"
@@ -104,7 +126,7 @@ class Train:
                 if hasattr(ii, "kernel_regularizer") and isinstance(ii.kernel_regularizer, keras.regularizers.L2):
                     l2_weight_decay = ii.kernel_regularizer.l2
                     break
-            print(">>>> L2 regularizer value from basic_model:", l2_weight_decay)
+            logging.info(">>>> L2 regularizer value from basic_model:", l2_weight_decay)
             output_weight_decay *= l2_weight_decay * 2
         self.output_weight_decay = output_weight_decay
 
@@ -112,7 +134,7 @@ class Train:
         if tf.distribute.has_strategy():
             strategy = tf.distribute.get_strategy()
             self.batch_size = batch_size * strategy.num_replicas_in_sync
-            print(">>>> num_replicas_in_sync: %d, batch_size: %d" % (strategy.num_replicas_in_sync, self.batch_size))
+            logging.info(">>>> num_replicas_in_sync: %d, batch_size: %d" % (strategy.num_replicas_in_sync, self.batch_size))
             self.data_options = tf.data.Options()
             self.data_options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
 
@@ -127,6 +149,7 @@ class Train:
             lr_min=lr_min,
             lr_decay_steps=lr_decay_steps,
             lr_warmup_steps=lr_warmup_steps,
+            checkpoint_path=chekepoint_path
         )
         self.gently_stop = None  # may not working for windows
         self.my_evals, self.custom_callbacks = my_evals, []
@@ -161,21 +184,21 @@ class Train:
         }
 
         if is_offline_triplet:
-            print(">>>> Init offline triplet dataset...")
+            logging.info(">>>> Init offline triplet dataset...")
             aa = data.Triplet_dataset_offline(basic_model=self.basic_model, samples_per_mining=self.samples_per_mining, **dataset_params)
             self.train_ds, self.steps_per_epoch = aa.ds, aa.steps_per_epoch
             self.is_triplet_dataset = False
         elif init_as_triplet:
-            print(">>>> Init triplet dataset...")
+            logging.info(">>>> Init triplet dataset...")
             if self.data_path.endswith(".tfrecord"):
-                print(">>>> Combining tfrecord dataset with triplet is NOT recommended.")
+                logging.info(">>>> Combining tfrecord dataset with triplet is NOT recommended.")
                 self.train_ds, self.steps_per_epoch = data.prepare_distill_dataset_tfrecord(**dataset_params)
             else:
                 aa = data.Triplet_dataset(**dataset_params)
                 self.train_ds, self.steps_per_epoch = aa.ds, aa.steps_per_epoch
             self.is_triplet_dataset = True
         else:
-            print(">>>> Init softmax dataset...")
+            logging.info(">>>> Init softmax dataset...")
             if self.data_path.endswith(".tfrecord"):
                 self.train_ds, self.steps_per_epoch = data.prepare_distill_dataset_tfrecord(**dataset_params)
             else:
@@ -211,7 +234,7 @@ class Train:
                 # Saving may meet Error: OSError: Unable to create link (name already exists)
                 self.optimizer = self.model.optimizer
                 compiled_opt = self.optimizer.inner_optimizer if isinstance(self.optimizer, keras.mixed_precision.LossScaleOptimizer) else self.optimizer
-                print(">>>> Reuse optimizer from previoue model:", compiled_opt.__class__.__name__)
+                logging.info(">>>> Reuse optimizer from previoue model:", compiled_opt.__class__.__name__)
                 # if isinstance(self.model.optimizer, keras.mixed_precision.LossScaleOptimizer):
                 #     inner_optimizer_pre = self.model.optimizer.inner_optimizer
                 #     inner_optimizer = inner_optimizer_pre.__class__(**inner_optimizer_pre.get_config())
@@ -220,10 +243,10 @@ class Train:
                 # else:
                 #     self.optimizer = self.model.optimizer.__class__(**self.model.optimizer.get_config())
             else:
-                print(">>>> Use default optimizer:", self.default_optimizer)
+                logging.info(">>>> Use default optimizer:", self.default_optimizer)
                 self.optimizer = self.default_optimizer
         else:
-            print(">>>> Use specified optimizer:", optimizer)
+            logging.info(">>>> Use specified optimizer:", optimizer)
             self.optimizer = optimizer
 
         try:
@@ -233,7 +256,7 @@ class Train:
         else:
             compiled_opt = self.optimizer.inner_optimizer if isinstance(self.optimizer, keras.mixed_precision.LossScaleOptimizer) else self.optimizer
             if isinstance(compiled_opt, tfa.optimizers.weight_decay_optimizers.DecoupledWeightDecayExtension):
-                print(">>>> Append weight decay callback...")
+                logging.info(">>>> Append weight decay callback...")
                 lr_base, wd_base = self.optimizer.lr.numpy(), self.optimizer.weight_decay.numpy()
                 wd_callback = myCallbacks.OptimizerWeightDecay(lr_base, wd_base, is_lr_on_batch=self.is_lr_on_batch)
                 self.callbacks.append(wd_callback)  # should be after lr_scheduler
@@ -247,7 +270,7 @@ class Train:
             self.model = keras.models.Model(inputs, self.model.layers[output_layer].output)
 
         if self.output_weight_decay != 0:
-            print(">>>> Add L2 regularizer to model output layer, output_weight_decay = %f" % self.output_weight_decay)
+            logging.info(">>>> Add L2 regularizer to model output layer, output_weight_decay = %f" % self.output_weight_decay)
             output_kernel_regularizer = keras.regularizers.L2(self.output_weight_decay / 2)
         else:
             output_kernel_regularizer = None
@@ -255,14 +278,14 @@ class Train:
         model_output_layer_name = None if self.model is None else self.model.output_names[-1]
         # arcface_not_match = self.model.layers[-1].append_norm != header_append_norm or self.partial_fc_split != self.model.layers[-1].partial_fc_split
         if type == self.softmax and model_output_layer_name != self.softmax:
-            print(">>>> Add softmax layer...")
+            logging.info(">>>> Add softmax layer...")
             softmax_logits = keras.layers.Dense(self.classes, use_bias=False, name=self.softmax + "_logits", kernel_regularizer=output_kernel_regularizer)
             if self.model != None and "_embedding" not in self.model.output_names[-1]:
                 softmax_logits.build(embedding.shape)
                 weight_cur = softmax_logits.get_weights()
                 weight_pre = self.model.layers[-1].get_weights()
                 if len(weight_cur) == len(weight_pre) and weight_cur[0].shape == weight_pre[0].shape:
-                    print(">>>> Reload previous %s weight..." % (self.model.output_names[-1]))
+                    logging.info(">>>> Reload previous %s weight..." % (self.model.output_names[-1]))
                     softmax_logits.set_weights(weight_pre)
             logits = softmax_logits(embedding)
             output_fp32 = keras.layers.Activation("softmax", dtype="float32", name=self.softmax)(logits)
@@ -271,7 +294,7 @@ class Train:
             vpl_start_iters = self.vpl_start_iters * self.steps_per_epoch if self.vpl_start_iters < 50 else self.vpl_start_iters
             vpl_kwargs = {"vpl_lambda": 0.15, "start_iters": vpl_start_iters, "allowed_delta": self.vpl_allowed_delta}
             arc_kwargs = {"loss_top_k": loss_top_k, "append_norm": header_append_norm, "partial_fc_split": self.partial_fc_split, "name": self.arcface}
-            print(">>>> Add arcface layer, arc_kwargs={}, vpl_kwargs={}...".format(arc_kwargs, vpl_kwargs))
+            logging.info(">>>> Add arcface layer, arc_kwargs={}, vpl_kwargs={}...".format(arc_kwargs, vpl_kwargs))
             if vpl_start_iters > 0:
                 batch_size = self.batch_size_per_replica
                 arcface_logits = models.NormDenseVPL(batch_size, self.classes, output_kernel_regularizer, **arc_kwargs, **vpl_kwargs, dtype="float32")
@@ -283,7 +306,7 @@ class Train:
                 weight_cur = arcface_logits.get_weights()
                 weight_pre = self.model.layers[-1].get_weights()
                 if len(weight_cur) == len(weight_pre) and weight_cur[0].shape == weight_pre[0].shape:
-                    print(">>>> Reload previous %s weight..." % (self.model.output_names[-1]))
+                    logging.info(">>>> Reload previous %s weight..." % (self.model.output_names[-1]))
                     arcface_logits.set_weights(weight_pre)
             output_fp32 = arcface_logits(embedding)
             # output_fp32 = keras.layers.Activation('linear', dtype='float32', name=self.arcface)(output_fp32)
@@ -292,7 +315,7 @@ class Train:
             self.model = self.basic_model
             self.model.output_names[0] = type + "_embedding"
         else:
-            print(">>>> Will NOT change model output layer.")
+            logging.info(">>>> Will NOT change model output layer.")
 
         if self.pretrained is not None:
             if self.model is None:
@@ -305,7 +328,7 @@ class Train:
         nns = self.model.output_names
         emb_shape = self.basic_model.output_shape[-1]
         if emb_type == self.distill and self.teacher_emb_size != emb_shape:
-            print(">>>> Add a dense layer to map embedding: student %d --> teacher %d" % (emb_shape, self.teacher_emb_size))
+            logging.info(">>>> Add a dense layer to map embedding: student %d --> teacher %d" % (emb_shape, self.teacher_emb_size))
             embedding = self.basic_model.outputs[0]
             if self.distill_emb_map_layer is None:
                 self.distill_emb_map_layer = keras.layers.Dense(self.teacher_emb_size, use_bias=False, name="distill_map", dtype="float32")
@@ -321,7 +344,7 @@ class Train:
         self.loss_weights.update({self.model.output_names[0]: emb_loss_weight})
 
     def __init_type_by_loss__(self, loss):
-        print(">>>> Init type by loss function name...")
+        logging.info(">>>> Init type by loss function name...")
         if isinstance(loss, str):
             return self.softmax
 
@@ -370,8 +393,13 @@ class Train:
         return emb_loss_names, emb_loss_weights
 
     def __basic_train__(self, epochs, initial_epoch=0):
+	    # logging model summary
+        stringlist = []
+        self.model.summary(print_fn=lambda x: stringlist.append(x))
+        summary = "\n".join(stringlist)
+        logging.info(summary)
         self.model.compile(optimizer=self.optimizer, loss=self.cur_loss, metrics=self.metrics, loss_weights=self.loss_weights)
-        self.model.fit(
+        hist = self.model.fit(
             self.train_ds,
             epochs=epochs,
             verbose=1,
@@ -382,6 +410,33 @@ class Train:
             use_multiprocessing=True,
             workers=4,
         )
+        print(hist)
+        logging.info(hist)
+#        h_loss = hist.history['loss']\
+#        h_acc = history['acc']
+#        h_val_loss = history['val_loss']
+#        h_val_acc = history['val_acc']
+#        logging.warning(h_loss)
+#        logging.warning(h_acc)
+#        logging.warning(h_val_loss)
+#        logging.warning(h_cal_acc)
+#        his = [h_loss, h_acc, h_val_loss, h_val_acc]
+        logging.info(self.my_history.print_hist())
+        def plot_hist(h):
+            h_l, h_a, h_v_l, h_v_a = his
+            import matplotlib.pyplot as plt
+            fig, loss_ax = plt.subplots()
+            acc_ax = loss_ax.twinx()
+            loss_ax.plot(h_l, 'y', label='train loss')
+            loss_ax.plot(v_l, 'r', label='val loss')
+            loss_ax.set_xlabel('epoch')
+            loss_ax.set_ylabel('loss')
+            loss_ax.legend(loc='upper left')
+            acc_ax.plot(h_a, 'b', label='train acc')
+            acc_ax.plot(h_v_a, 'g', label='val acc')
+            acc_ax.set_ylabel('accuracy')
+            acc_ax.legend(loc='upper left')
+            plt.savefig(self.folder_path + '/train.png')
 
     def reset_dataset(self, data_path=None):
         self.train_ds = None
@@ -412,15 +467,15 @@ class Train:
 
         if type is None and not self.inited_from_model:
             type = self.__init_type_by_loss__(loss)
-        print(">>>> Train %s..." % type)
+        logging.info(">>>> Train %s..." % type)
         self.__init_dataset__(type, emb_loss_names)
         if self.train_ds is None:
-            print(">>>> [Error]: train_ds is None.")
+            logging.info(">>>> [Error]: train_ds is None.")
             if self.model is not None:
                 self.model.stop_training = True
             return
         if self.is_distill_ds == False and type == self.distill:
-            print(">>>> [Error]: Dataset doesn't contain embedding data.")
+            logging.info(">>>> [Error]: Dataset doesn't contain embedding data.")
             if self.model is not None:
                 self.model.stop_training = True
             return
@@ -441,7 +496,7 @@ class Train:
         self.cur_loss, self.loss_weights = [loss], {ii: lossWeight for ii in self.model.output_names}
         if self.center in emb_loss_names and type != self.center:
             loss_class = emb_loss_names[self.center]
-            print(">>>> Attach center loss:", loss_class.__name__)
+            logging.info(">>>> Attach center loss:", loss_class.__name__)
             emb_shape = self.basic_model.output_shape[-1]
             initial_file = os.path.splitext(self.save_path)[0] + "_centers.npy"
             center_loss = loss_class(self.classes, emb_shape=emb_shape, initial_file=initial_file)
@@ -450,16 +505,16 @@ class Train:
 
         if self.triplet in emb_loss_names and type != self.triplet:
             loss_class = emb_loss_names[self.triplet]
-            print(">>>> Attach triplet loss: %s, alpha = %f..." % (loss_class.__name__, tripletAlpha))
+            logging.info(">>>> Attach triplet loss: %s, alpha = %f..." % (loss_class.__name__, tripletAlpha))
             triplet_loss = loss_class(alpha=tripletAlpha)
             self.__add_emb_output_to_model__(self.triplet, triplet_loss, emb_loss_weights[self.triplet])
 
         if self.is_distill_ds and type != self.distill:
             distill_loss = emb_loss_names.get(self.distill, losses.distiller_loss_cosine)
-            print(">>>> Attach disill loss:", distill_loss.__name__)
+            logging.info(">>>> Attach disill loss:", distill_loss.__name__)
             self.__add_emb_output_to_model__(self.distill, distill_loss, emb_loss_weights.get(self.distill, 1))
 
-        print(">>>> loss_weights:", self.loss_weights)
+        logging.info(">>>> loss_weights:", self.loss_weights)
         self.metrics = {ii: None if "embedding" in ii else "accuracy" for ii in self.model.output_names}
         # self.callbacks.append(keras.callbacks.TerminateOnNaN())
         self.callbacks.append(myCallbacks.ExitOnNaN())  # Exit directly avoiding further saving
@@ -474,7 +529,7 @@ class Train:
             self.callbacks.append(self.gently_stop)
 
         if bottleneckOnly:
-            print(">>>> Train bottleneckOnly...")
+            logging.info(">>>> Train bottleneckOnly...")
             self.basic_model.trainable = False
             self.callbacks = self.callbacks[len(self.my_evals) :]  # Exclude evaluation callbacks
             self.__basic_train__(epoch, initial_epoch=0)
@@ -482,11 +537,11 @@ class Train:
         else:
             self.__basic_train__(initial_epoch + epoch, initial_epoch=initial_epoch)
 
-        print(">>>> Train %s DONE!!! epochs = %s, model.stop_training = %s" % (type, self.model.history.epoch, self.model.stop_training))
-        print(">>>> My history:")
+        logging.info(">>>> Train %s DONE!!! epochs = %s, model.stop_training = %s" % (type, self.model.history.epoch, self.model.stop_training))
+        logging.info(">>>> My history:")
         self.my_history.print_hist()
         latest_save_path = os.path.join("checkpoints", os.path.splitext(self.save_path)[0] + "_basic_model_latest.h5")
-        print(">>>> Saving latest basic model to:", latest_save_path)
+        logging.info(">>>> Saving latest basic model to:", latest_save_path)
         self.basic_model.save(latest_save_path)
 
     def train(self, train_schedule, initial_epoch=0):
@@ -503,6 +558,6 @@ class Train:
             initial_epoch += 0 if sch.get("bottleneckOnly", False) else sch["epoch"]
 
             if self.model is None or self.model.stop_training == True:
-                print(">>>> But it's an early stop, break...")
+                logging.info(">>>> But it's an early stop, break...")
                 break
         return initial_epoch
