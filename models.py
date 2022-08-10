@@ -1,10 +1,11 @@
 import tensorflow as tf
 from tensorflow import keras
 import tensorflow.keras.backend as K
+import logging
 
 
 def print_buildin_models():
-    print(
+    logging.info(
         """
     >>>> buildin_models
     MXNet version resnet: mobilenet_m1, r18, r34, r50, r100, r101, se_r34, se_r50, se_r100
@@ -113,7 +114,7 @@ def buildin_models(
         xx = stem_model
 
     if bn_momentum != 0.99 or bn_epsilon != 0.001:
-        print(">>>> Change BatchNormalization momentum and epsilon default value.")
+        logging.info(">>>> Change BatchNormalization momentum and epsilon default value.")
         for ii in xx.layers:
             if isinstance(ii, keras.layers.BatchNormalization):
                 ii.momentum, ii.epsilon = bn_momentum, bn_epsilon
@@ -268,7 +269,7 @@ class NormDenseVPL(NormDense):
             lambda: tf.where(self.iters - self.queue_iters <= self.allowed_delta, self.vpl_lambda, 0.0),  # prepare_queue_lambda
             lambda: self.zero_queue_lambda,
         )
-        tf.print(" - vpl_sample_ratio:", tf.reduce_mean(tf.cast(queue_lambda > 0, "float32")), end="")
+        logging.info(" - vpl_sample_ratio:", tf.reduce_mean(tf.cast(queue_lambda > 0, "float32")), end="")
         # self.queue_lambda = queue_lambda
 
         if self.partial_fc_split > 1:
@@ -305,7 +306,7 @@ def add_l2_regularizer_2_model(model, weight_decay, custom_objects={}, apply_to_
                 # print(layer.name, layer.__class__.__name__, rrs)
                 if layer.__class__.__name__ not in regularizers_type:
                     regularizers_type[layer.__class__.__name__] = rrs
-        print(regularizers_type)
+        logging.info(regularizers_type)
 
     for layer in model.layers:
         attrs = []
@@ -357,17 +358,17 @@ def replace_ReLU_with_PReLU(model, target_activation="PReLU", **kwargs):
         if isinstance(layer, ReLU) or (isinstance(layer, Activation) and layer.activation == keras.activations.relu):
             if target_activation == "PReLU":
                 layer_name = layer.name.replace("_relu", "_prelu")
-                print(">>>> Convert ReLU:", layer.name, "-->", layer_name)
+                logging.info(">>>> Convert ReLU:", layer.name, "-->", layer_name)
                 # Default initial value in mxnet and pytorch is 0.25
                 return PReLU(shared_axes=[1, 2], alpha_initializer=tf.initializers.Constant(0.25), name=layer_name, **kwargs)
             elif isinstance(target_activation, str):
                 layer_name = layer.name.replace("_relu", "_" + target_activation)
-                print(">>>> Convert ReLU:", layer.name, "-->", layer_name)
+                logging.info(">>>> Convert ReLU:", layer.name, "-->", layer_name)
                 return Activation(activation=target_activation, name=layer_name, **kwargs)
             else:
                 act_class_name = target_activation.__name__
                 layer_name = layer.name.replace("_relu", "_" + act_class_name)
-                print(">>>> Convert ReLU:", layer.name, "-->", layer_name)
+                logging.info(">>>> Convert ReLU:", layer.name, "-->", layer_name)
                 return target_activation(**kwargs)
         return layer
 
@@ -492,7 +493,7 @@ def replace_add_with_stochastic_depth(model, survivals=(1, 0.8)):
             new_layer_name = layer_name.replace("add_", "stochastic_depth_")
             survival_probability = survivals_dict[layer_name]
             if survival_probability < 1:
-                print("Converting:", layer_name, "-->", new_layer_name, ", survival_probability:", survival_probability)
+                logging.info("Converting:", layer_name, "-->", new_layer_name, ", survival_probability:", survival_probability)
                 return StochasticDepth(survival_probability, name=new_layer_name)
             else:
                 return layer
@@ -510,7 +511,7 @@ def replace_stochastic_depth_with_add(model, drop_survival=False):
             layer_name = layer.name
             new_layer_name = layer_name.replace("_stochastic_depth", "_lambda")
             survival = layer.survival_probability
-            print("Converting:", layer_name, "-->", new_layer_name, ", survival_probability:", survival)
+            logging.info("Converting:", layer_name, "-->", new_layer_name, ", survival_probability:", survival)
             if drop_survival or not survival < 1:
                 return keras.layers.Add(name=new_layer_name)
             else:
