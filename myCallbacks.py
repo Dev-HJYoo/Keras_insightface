@@ -8,6 +8,7 @@ from tensorflow import keras
 from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, LearningRateScheduler
 from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.utils import losses_utils
+import logging
 
 
 class Gently_stop_callback(keras.callbacks.Callback):
@@ -16,14 +17,14 @@ class Gently_stop_callback(keras.callbacks.Callback):
         self.yes_or_no = lambda: "n" not in self.timeout_input(prompt, time_out, default="y")[1].lower()
 
     def on_epoch_end(self, epoch, logs={}):
-        print()
+        logging.info()
         if not self.yes_or_no():
             self.model.stop_training = True
 
     def timeout_input(self, prompt, timeout=3, default=""):
-        print(prompt, end=": ", flush=True)
+        logging.info(prompt, end=": ", flush=True)
         inputs, outputs, errors = select.select([sys.stdin], [], [], timeout)
-        print()
+        logging.info()
         return (0, sys.stdin.readline().strip()) if inputs else (-1, default)
 
 
@@ -39,7 +40,7 @@ class ExitOnNaN(keras.callbacks.Callback):
         loss = logs.get("loss")
         if loss is not None:
             if not tf.math.is_finite(loss):
-                print("\nError: Invalid loss, terminating training")
+                logging.info("\nError: Invalid loss, terminating training")
                 self.model.stop_training = True
                 sys.exit()
 
@@ -83,10 +84,10 @@ class My_history(keras.callbacks.Callback):
                 json.dump(self.history, ff)
 
     def print_hist(self):
-        print("{")
+        logging.info("{")
         for kk, vv in self.history.items():
-            print("  '%s': %s," % (kk, vv))
-        print("}")
+            logging.info("  '%s': %s," % (kk, vv))
+        logging.info("}")
 
 
 class VPLUpdateQueue(keras.callbacks.Callback):
@@ -125,7 +126,7 @@ class OptimizerWeightDecay(keras.callbacks.Callback):
             K.set_value(self.model.optimizer.weight_decay, wd)
         # wd = self.model.optimizer.weight_decay
         if not self.is_lr_on_batch or step == 0:
-            print("Weight decay is {}".format(wd))
+            logging.info("Weight decay is {}".format(wd))
 
 
 class CosineLrSchedulerEpoch(keras.callbacks.Callback):
@@ -162,7 +163,7 @@ class CosineLrSchedulerEpoch(keras.callbacks.Callback):
         if self.model is not None:
             K.set_value(self.model.optimizer.lr, lr)
 
-        print("\nLearning rate for iter {} is {}".format(epoch + 1, lr))
+        logging.info("\nLearning rate for iter {} is {}".format(epoch + 1, lr))
         return lr
 
 
@@ -227,7 +228,7 @@ class CosineLrScheduler(keras.callbacks.Callback):
         if self.model is not None:
             K.set_value(self.model.optimizer.lr, lr)
         if iterNum == 0:
-            print("\nLearning rate for iter {} is {}, global_iterNum is {}".format(self.cur_epoch + 1, lr, global_iterNum))
+            logging.info("\nLearning rate for iter {} is {}, global_iterNum is {}".format(self.cur_epoch + 1, lr, global_iterNum))
         return lr
 
 
@@ -238,7 +239,7 @@ def exp_scheduler(epoch, lr_base, decay_rate=0.05, lr_min=0, warmup_steps=0):
         # decayed_learning_rate = learning_rate * decay_rate ^ (global_step / decaysteps)
         lr = lr_base * np.exp(decay_rate * (warmup_steps - epoch))
     lr = lr_min if lr < lr_min else lr
-    print("\nLearning rate for iter {} is {}".format(epoch + 1, lr))
+    logging.info("\nLearning rate for iter {} is {}".format(epoch + 1, lr))
     return lr
 
 
@@ -248,7 +249,7 @@ def constant_scheduler(epoch, lr_base, lr_decay_steps, decay_rate=0.1, warmup_st
         lr = lr_min + (lr_base - lr_min) * epoch / warmup_steps
     else:
         lr = lr_base * decay_rate ** np.sum(epoch >= np.array(lr_decay_steps))
-    print("\nLearning rate for iter {} is {}".format(epoch + 1, lr))
+    logging.info("\nLearning rate for iter {} is {}".format(epoch + 1, lr))
     return lr
 
 
