@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow import keras
-
+import logging
 
 # margin_softmax class wrapper
 @keras.utils.register_keras_serializable(package="keras_insightface")
@@ -179,7 +179,7 @@ class CurricularFaceLoss(ArcfaceLossSimple):
         theta_valid = tf.where(y_pred_vals > self.threshold, theta, self.theta_min - theta)
 
         self.hard_scale.assign(tf.reduce_mean(y_pred_vals) * 0.01 + (1 - 0.01) * self.hard_scale)
-        tf.print(", hard_scale:", self.hard_scale, end="")
+        logging.info(", hard_scale:", self.hard_scale, end="")
         hard_norm_logits = tf.where(norm_logits > tf.expand_dims(theta_valid, 1), norm_logits * (self.hard_scale + norm_logits), norm_logits)
 
         arcface_logits = tf.tensor_scatter_nd_update(hard_norm_logits, pick_cond, theta_valid) * self.scale
@@ -305,7 +305,7 @@ class MagFaceLoss(ArcfaceLossSimple):
         # MegFace loss_G, g = 1/(self.u_a**2) * x_norm + 1/(x_norm)
         regularizer_loss = self.regularizer_loss_scale * feature_norm + 1.0 / feature_norm
 
-        tf.print(
+        logging.info(
             # ", regularizer_loss: ",
             # tf.reduce_mean(regularizer_loss),
             ", arcface: ",
@@ -385,7 +385,7 @@ class AdaFaceLoss(ArcfaceLossSimple):
         feature_norm = tf.clip_by_value(feature_norm, self.min_feature_norm, self.max_feature_norm)
         scaled_margin = tf.stop_gradient(self.__to_scaled_margin__(feature_norm))
         # tf.print(", margin: ", tf.reduce_mean(scaled_margin), sep="", end="\r")
-        tf.print(", margin hist: ", tf.histogram_fixed_width(scaled_margin, [-self.margin, self.margin], nbins=3), sep="", end="\r")
+        logging.info(", margin hist: ", tf.histogram_fixed_width(scaled_margin, [-self.margin, self.margin], nbins=3), sep="", end="\r")
         # ex: m=0.5, h:0.333
         # range
         #       (66% range)
@@ -450,7 +450,7 @@ class AdaCosLoss(tf.keras.losses.Loss):
         B_avg = tf.where(pick_cond, tf.zeros_like(norm_logits), tf.exp(self.scale * norm_logits))
         B_avg = tf.reduce_mean(tf.reduce_sum(B_avg, axis=1))
         self.scale.assign(tf.math.log(B_avg) / tf.cos(tf.minimum(self.theta_med_max, theta_med)))
-        tf.print(", scale:", self.scale, "theta_med:", theta_med, end="")
+        logging.info(", scale:", self.scale, "theta_med:", theta_med, end="")
 
         arcface_logits = norm_logits * self.scale
         return tf.keras.losses.categorical_crossentropy(y_true, arcface_logits, from_logits=self.from_logits, label_smoothing=self.label_smoothing)
@@ -532,7 +532,7 @@ class CenterLoss(tf.keras.losses.Loss):
         # centers = tf.Variable(tf.random.truncated_normal((num_classes, emb_shape)), trainable=False, aggregation=tf.VariableAggregation.MEAN)
         if initial_file:
             if os.path.exists(initial_file):
-                print(">>>> Reload from center backup:", initial_file)
+                logging.info(">>>> Reload from center backup:", initial_file)
                 aa = np.load(initial_file)
                 centers.assign(aa)
             self.save_centers_callback = Save_Numpy_Callback(initial_file, centers)
@@ -669,7 +669,7 @@ class ArcBatchHardTripletLoss(TripletLossWapper):
         # neg_dists = tf.ragged.boolean_mask(dists, tf.logical_not(pos_mask))
         neg_dists = tf.where(pos_mask, tf.ones_like(dists) * -1, dists)
         neg_hardest_dists = tf.reduce_max(neg_dists, -1)
-        tf.print(
+        logging.info(
             " - triplet_dists_mean:",
             tf.reduce_mean(dists),
             "pos:",
@@ -704,7 +704,7 @@ class BatchHardTripletLossEuclidean(TripletLossWapper):
         # neg_dists = tf.ragged.boolean_mask(dists, tf.logical_not(pos_mask))
         neg_dists = tf.where(pos_mask, tf.ones_like(dists) * tf.reduce_max(dists), dists)
         neg_hardest_dists = tf.reduce_min(neg_dists, -1)
-        tf.print(
+        logging.info(
             " - triplet_dists_mean:",
             tf.reduce_mean(dists),
             "pos:",
@@ -747,7 +747,7 @@ class BatchHardTripletLossEuclideanAutoAlpha(TripletLossWapper):
         neg_hardest_dists = tf.reduce_min(neg_dists, -1)
         basic_loss = pos_hardest_dists + self.auto_alpha - neg_hardest_dists
         self.auto_alpha.assign(tf.reduce_mean(dists) * alpha)
-        tf.print(
+        logging.info(
             " - triplet_dists_mean:",
             tf.reduce_mean(dists),
             "pos:",
