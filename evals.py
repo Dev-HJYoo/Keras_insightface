@@ -15,7 +15,8 @@ from sklearn.model_selection import KFold
 from scipy import interpolate
 import sklearn
 from sklearn.decomposition import PCA
-
+import logging
+import models
 
 class eval_callback(tf.keras.callbacks.Callback):
     def __init__(self, basic_model, test_bin_file, batch_size=128, save_model=None, eval_freq=1, flip=True, PCA_acc=False):
@@ -35,7 +36,9 @@ class eval_callback(tf.keras.callbacks.Callback):
             # If eval_freq > 1, do evaluation on batch, and also on epoch.
             self.on_batch_end = lambda batch=0, logs=None: self.__eval_func__(batch, logs, eval_freq=eval_freq)
         self.on_epoch_end = lambda epoch=0, logs=None: self.__eval_func__(epoch, logs, eval_freq=1)
-
+#        print(len(issame_list))
+#        print(self.test_names)
+#        print('ds: {}'.format(ds))
         self.is_distribute = False
         if tf.distribute.has_strategy():
             self.strategy = tf.distribute.get_strategy()
@@ -81,7 +84,7 @@ class eval_callback(tf.keras.callbacks.Callback):
         else:
             cur_step = str(cur_step + 1)
         dists = []
-        tf.print("")
+        logging.info("")
         if self.is_distribute:
             embs = self.__do_predict_distribute__()
         else:
@@ -90,14 +93,21 @@ class eval_callback(tf.keras.callbacks.Callback):
         # tf.print("embs.shape: ", embs.shape)
         # if np.isnan(embs).sum() != 0:
         if not np.alltrue(np.isfinite(embs)):
-            tf.print("NAN in embs, not a good one")
+            logging.info("NAN in embs, not a good one")
             return
         self.embs = embs
         embs = normalize(embs)
         embs_a = embs[::2]
         embs_b = embs[1::2]
+        logging.info((str(embs.shape)))
+#        print(embs.shape)
+#        print(embs_a.shape, embs_b.shape)
         dists = (embs_a * embs_b).sum(1)
+        print('dists', dists.shape)
+#        print('a ', embs_a[0].shape)
+#        print('b ', embs_b[0].shape) 
         # dists = half_split_weighted_cosine_similarity_11(embs_a, embs_b)
+
 
         tt = np.sort(dists[self.test_issame[: dists.shape[0]]])
         ff = np.sort(dists[np.logical_not(self.test_issame[: dists.shape[0]])])
@@ -109,21 +119,21 @@ class eval_callback(tf.keras.callbacks.Callback):
         acc_max = acc_count[acc_max_indx] / dists.shape[0]
         self.acc_thresh = ff[acc_max_indx - t_steps]
         self.cur_acc = acc_max
-
+        print(acc_max)
         if self.PCA_acc:
             _, _, accuracy, val, val_std, far = evaluate(embs, self.test_issame, nrof_folds=10)
             acc2, std2 = np.mean(accuracy), np.std(accuracy)
-            tf.print(
+            logging.info(
                 "\n>>>> %s evaluation max accuracy: %f, thresh: %f, previous max accuracy: %f, PCA accuray = %f ± %f"
                 % (self.test_names, acc_max, self.acc_thresh, self.max_accuracy, acc2, std2)
             )
         else:
-            tf.print(
+            logging.info(
                 "\n>>>> %s evaluation max accuracy: %f, thresh: %f, previous max accuracy: %f" % (self.test_names, acc_max, self.acc_thresh, self.max_accuracy)
             )
 
         if acc_max >= self.max_accuracy:
-            tf.print(">>>> Improved = %f" % (acc_max - self.max_accuracy))
+            logging.info(">>>> Improved = %f" % (acc_max - self.max_accuracy))
             self.max_accuracy = acc_max
             if self.save_model:
                 save_name_base = "%s_basic_%s_epoch_" % (self.save_model, self.test_names)
@@ -131,7 +141,7 @@ class eval_callback(tf.keras.callbacks.Callback):
                 for ii in glob2.glob(save_path_base + "*.h5"):
                     os.remove(ii)
                 save_path = save_path_base + "%s_%f.h5" % (cur_step, self.max_accuracy)
-                tf.print("Saving model to: %s" % (save_path))
+                logging.info("Saving model to: %s" % (save_path))
                 self.basic_model.save(save_path, include_optimizer=False)
 
 
@@ -180,7 +190,7 @@ def calculate_roc(thresholds, embeddings1, embeddings2, actual_issame, nrof_fold
         # print('train_set', train_set)
         # print('test_set', test_set)
         if pca > 0:
-            print("doing pca on", fold_idx)
+            logging.info("doing pca on", fold_idx)
             embed1_train = embeddings1[train_set]
             embed2_train = embeddings2[train_set]
             _embed_train = np.concatenate((embed1_train, embed2_train), axis=0)
