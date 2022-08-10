@@ -5,7 +5,7 @@ import pandas as pd
 import tensorflow as tf
 from skimage.io import imread
 from tqdm import tqdm
-
+import logging
 
 class ImageClassesRule_map:
     def __init__(self, dir, dir_rule="*", excludes=[]):
@@ -34,10 +34,10 @@ def pre_process_folder(data_path, image_names_reg=None, image_classes_rule=None)
         else:
             # dataset with embedding values
             image_names, image_classes, embeddings = aa["image_names"], aa["image_classes"], aa["embeddings"]
-        print(">>>> reloaded from dataset backup:", dest_pickle)
+        logging.info(">>>> reloaded from dataset backup:", str(dest_pickle))
     else:
         if not os.path.exists(data_path):
-            print(">>>> [Error] data_path not exists, data_path:", data_path)
+            logging.info(">>>> [Error] data_path not exists, data_path:", data_path)
             return [], [], [], 0, None
         if image_classes_rule is None:
             # image_classes_rule = default_image_classes_rule
@@ -70,7 +70,7 @@ class RandomProcessImage:
         self.img_shape, self.random_status, self.random_crop = img_shape[:2], random_status, random_crop
         if random_status >= 100:
             magnitude = 5 * random_status / 100
-            print(">>>> RandAugment: magnitude =", magnitude)
+            logging.info(">>>> RandAugment: magnitude =", magnitude)
 
             # from keras_cv_attention_models.imagenet import augment
             # translate_const, cutout_const = min(img_shape) * 0.45, 30
@@ -81,7 +81,7 @@ class RandomProcessImage:
 
             aa = augment.RandAugment(magnitude=magnitude, cutout_const=40)
             if random_cutout_mask_area > 0:
-                print(">>>> random_cutout_mask_area provided:", random_cutout_mask_area)
+                logging.info(">>>> random_cutout_mask_area provided:", random_cutout_mask_area)
                 # aa.available_ops = ["AutoContrast", "Equalize", "Color", "Contrast", "Brightness", "Sharpness"]
                 # random_cutout = 1 / len(aa.available_ops)
                 # self.process = lambda img: aa.distort(
@@ -202,7 +202,7 @@ class MXNetRecordGen:
         idx_path = os.path.join(data_path, "train.idx")
         bin_path = os.path.join(data_path, "train.rec")
 
-        print(">>>> idx_path = %s, bin_path = %s" % (idx_path, bin_path))
+        logging.info(">>>> idx_path = %s, bin_path = %s" % (idx_path, bin_path))
         imgrec = mx.recordio.MXIndexedRecordIO(idx_path, bin_path, "r")
         rec_header, _ = mx.recordio.unpack(imgrec.read_idx(0))
         total_images = int(rec_header.label[0]) - 1
@@ -246,12 +246,12 @@ def partial_fc_split_pick(image_names, image_classes, batch_size, split=2, debug
 
     picks = [np.logical_and(image_classes >= splits[ii], image_classes < splits[ii + 1]) for ii in range(split)]
     if debug:
-        print(">>>> splits:", splits, ", total images in each split:", [ii.sum() for ii in picks])
+        logging.info(">>>> splits:", splits, ", total images in each split:", [ii.sum() for ii in picks])
 
     indexes = np.arange(len(image_classes))
     split_index = [indexes[ii][: ii.sum() // batch_size * batch_size].reshape(-1, batch_size) for ii in picks]
     if debug:
-        print(">>>> After drop remainder:", [ii.shape for ii in split_index], ", prod:", [np.prod(ii.shape) for ii in split_index])
+        logging.info(">>>> After drop remainder:", [ii.shape for ii in split_index], ", prod:", [np.prod(ii.shape) for ii in split_index])
     # split_index = np.vstack(split_index)
     # np.random.shuffle(split_index)  # in place shuffle
     # split_index = split_index.ravel()  # flatten
@@ -270,7 +270,7 @@ def partial_fc_split_pick(image_names, image_classes, batch_size, split=2, debug
             # split_id = np.argmax(batch[0] < splits[1:])
             split_id = ii % split
             rrs.append(np.alltrue(np.logical_and(batch >= splits[split_id], batch < splits[split_id + 1])))
-        print(">>>> Total batches:", bb.shape[0] // batch_size, ", correctly split:", np.sum(rrs))
+        logging.info(">>>> Total batches:", bb.shape[0] // batch_size, ", correctly split:", np.sum(rrs))
 
     return image_names[split_index], image_classes[split_index]
 
@@ -302,28 +302,28 @@ def prepare_dataset(
     image_names, image_classes, embeddings, classes, _ = pre_process_folder(data_path, image_names_reg, image_classes_rule)
     total_images = len(image_names)
     if total_images == 0:
-        print(">>>> [Error] total_images is 0, image_names:", image_names, "image_classes:", image_classes)
+        logging.info(">>>> [Error] total_images is 0, image_names:", image_names, "image_classes:", image_classes)
         return None, None
-    print(">>>> Image length: %d, Image class length: %d, classes: %d" % (len(image_names), len(image_classes), classes))
+    logging.info(">>>> Image length: %d, Image class length: %d, classes: %d" % (len(image_names), len(image_classes), classes))
     if image_per_class != 0:
         pick, class_pick = pick_by_image_per_class(image_classes, image_per_class)
         image_names, image_classes = image_names[pick], image_classes[pick]
         total_images = len(image_names)
         if len(embeddings) != 0:
             embeddings = embeddings[pick]
-        print(">>>> After pick[%d], images: %d, valid classes: %d" % (image_per_class, len(image_names), class_pick.shape[0]))
+        logging.info(">>>> After pick[%d], images: %d, valid classes: %d" % (image_per_class, len(image_names), class_pick.shape[0]))
 
     if len(embeddings) != 0 and teacher_model_interf is None:
         # dataset with embedding values
-        print(">>>> embeddings: %s. This takes some time..." % (np.shape(embeddings),))
+        logging.info(">>>> embeddings: %s. This takes some time..." % (np.shape(embeddings),))
         ds = tf.data.Dataset.from_tensor_slices((image_names, embeddings, image_classes)).shuffle(buffer_size=total_images)
         process_func = lambda imm, emb, label: (tf_imread(imm), (emb, tf.one_hot(label, depth=classes, dtype=tf.int32)))
     elif partial_fc_split != 0:
-        print(">>>> partial_fc_split provided:", partial_fc_split)
+        logging.info(">>>> partial_fc_split provided:", partial_fc_split)
         picked_images, _ = partial_fc_split_pick(image_names, image_classes, batch_size, split=partial_fc_split, debug=True)
         total_images = picked_images.shape[0]
         sub_classes = classes // partial_fc_split
-        print(">>>> total images after pick: {}, sub_classes: {}".format(total_images, sub_classes))
+        logging.info(">>>> total images after pick: {}, sub_classes: {}".format(total_images, sub_classes))
 
         gen_func = lambda: partial_fc_split_gen(image_names, image_classes, batch_size, split=partial_fc_split)
         output_signature = (tf.TensorSpec(shape=(), dtype=tf.string), tf.TensorSpec(shape=(), dtype=tf.int64))
@@ -343,18 +343,18 @@ def prepare_dataset(
 
     ds = ds.batch(batch_size, drop_remainder=True)  # Use batch --> map has slightly effect on dataset reading time, but harm the randomness
     if mixup_alpha > 0 and mixup_alpha <= 1:
-        print(">>>> mixup_alpha provided:", mixup_alpha)
+        logging.info(">>>> mixup_alpha provided:", mixup_alpha)
         ds = ds.map(lambda xx, yy: mixup((xx - 127.5) * 0.0078125, yy, alpha=mixup_alpha))
     else:
         ds = ds.map(lambda xx, yy: ((xx - 127.5) * 0.0078125, yy))
 
     if teacher_model_interf is not None:
         if teacher_model_interf.output_shape[-1] == classes:
-            print(">>>> KLDivergence teacher model interface provided.")
+            logging.info(">>>> KLDivergence teacher model interface provided.")
             emb_func = lambda imm, label: (imm, teacher_model_interf(imm))
             ds = ds.map(emb_func)  # num_parallel_calls=AUTOTUNE
         else:
-            print(">>>> Teacher model interface provided.")
+            logging.info(">>>> Teacher model interface provided.")
             emb_func = lambda imm, label: (imm, (teacher_model_interf(imm), label))
             ds = ds.map(emb_func)  # num_parallel_calls=AUTOTUNE
 
@@ -389,7 +389,7 @@ def prepare_distill_dataset_tfrecord(data_path, batch_size=128, img_shape=(112, 
     classes, emb_shape, total = hh["classes"].numpy(), hh["emb_shape"].numpy(), hh["total"].numpy()
     use_fp16 = hh["use_fp16"].numpy()
     emb_dtype = tf.float16 if use_fp16 else tf.float32
-    print(">>>> [Base info] total:", total, "classes:", classes, "emb_shape:", emb_shape, "use_fp16:", use_fp16)
+    logging.info(">>>> [Base info] total:", total, "classes:", classes, "emb_shape:", emb_shape, "use_fp16:", use_fp16)
 
     random_process_image = RandomProcessImage(img_shape, random_status, random_crop)
 
@@ -441,7 +441,7 @@ class Triplet_dataset:
         self.batch_size = batch_size // image_per_class * image_per_class
         self.img_shape = img_shape[:2]
         self.channels = img_shape[2] if len(img_shape) > 2 else 3
-        print("The final train_dataset batch will be %s" % ([self.batch_size, *self.img_shape, self.channels]))
+        logging.info("The final train_dataset batch will be %s" % ([self.batch_size, *self.img_shape, self.channels]))
 
         one_hot_label = lambda label: tf.one_hot(label, depth=classes, dtype=tf.int32)
         random_process_image = RandomProcessImage(img_shape, random_status, random_crop)
@@ -460,7 +460,7 @@ class Triplet_dataset:
 
         ds = ds.batch(self.batch_size, drop_remainder=True)
         if teacher_model_interf is not None:
-            print(">>>> Teacher model interference provided.")
+            logging.info(">>>> Teacher model interference provided.")
             emb_func = lambda imm, label: (imm, (teacher_model_interf(imm), label))
             ds = ds.map(emb_func)  # num_parallel_calls=AUTOTUNE
 
@@ -473,7 +473,7 @@ class Triplet_dataset:
 
     def image_shuffle_gen(self):
         while True:
-            tf.print("Shuffle image data...")
+            logging.info("Shuffle image data...")
             shuffle_dataset = self.image_dataframe.map(self.split_func)
             image_data = np.random.permutation(np.vstack(shuffle_dataset.values)).flatten()
             for ii in image_data:
@@ -482,7 +482,7 @@ class Triplet_dataset:
 
     def image_shuffle_gen_with_emb(self):
         while True:
-            tf.print("Shuffle image with embedding data...")
+            logging.info("Shuffle image with embedding data...")
             shuffle_dataset = self.image_dataframe.map(self.split_func)
             image_data = np.random.permutation(np.vstack(shuffle_dataset.values)).flatten()
             for ii in image_data:
@@ -531,7 +531,7 @@ class Triplet_dataset_offline:
         self.batch_size = batch_size // 3 * 3
         self.img_shape = img_shape[:2]
         self.channels = img_shape[2] if len(img_shape) > 2 else 3
-        print(">>>> The final train_dataset batch will be %s" % ([self.batch_size, *self.img_shape, self.channels]))
+        logging.info(">>>> The final train_dataset batch will be %s" % ([self.batch_size, *self.img_shape, self.channels]))
 
         one_hot_label = lambda label: tf.one_hot(label, depth=classes, dtype=tf.int32)
         random_process_image = RandomProcessImage(img_shape, random_status, random_crop)
@@ -547,7 +547,7 @@ class Triplet_dataset_offline:
 
         # steps_per_epoch is not certain
         total = self.samples_per_mining * image_per_class if self.samples_per_mining > 0 else len(image_classes)
-        print(">>>> total:", total)
+        logging.info(">>>> total:", total)
         self.steps_per_epoch = int(np.ceil(3 * total / float(self.batch_size)))
 
     def offline_triplet_mining(self):
