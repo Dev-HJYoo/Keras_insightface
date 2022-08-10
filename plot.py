@@ -12,7 +12,7 @@ Scale = 1
 Default_legend_font_size = 8
 Default_text_font_size = 9
 Default_figure_base_size = 8
-# COLORS = cm.rainbow(np.linspace(0, 1, MAX_COLORS))
+COLORS = cm.rainbow(np.linspace(0, 1, MAX_COLORS))
 
 SPLIT_LINES = {}
 
@@ -245,6 +245,7 @@ def hist_plot(
 
     fig.tight_layout()
     if save != None and len(save) != 0:
+        print(save)
         fig.savefig(save)
 
     last_item = {kk: vv[-1][-1] for kk, vv in customs_dict.items()}
@@ -252,6 +253,7 @@ def hist_plot(
         last_item["loss"] = loss_lists[-1][-1]
     if len(accuracy_lists) != 0:
         last_item["accuracy"] = accuracy_lists[-1][-1]
+    plt.show()
     return np.array(axes), last_item
 
 
