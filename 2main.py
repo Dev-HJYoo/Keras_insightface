@@ -6,13 +6,13 @@ import tensorflow as tf
 
 with tf.distribute.MirroredStrategy().scope():
 # basic_model = models.buildin_models("ResNet101V2", dropout=0.4, emb_shape=512, output_layer="E")
-    basic_model = models.buildin_models("resnet50", dropout=0.4, emb_shape=512, output_layer="GDC")
+    basic_model = models.buildin_models("r50", dropout=0.4, emb_shape=512, output_layer="E")
     data_path = '../Datasets/faces_emore_112x112_folders'
     eval_paths = ['../Datasets/faces_emore/lfw.bin', '../Datasets/faces_emore/cfp_fp.bin', '../Datasets/faces_emore/agedb_30.bin']
-    save_path = 'test_emore.h5'
+    save_path = 'r50_emore.h5'
     tt = train.Train(data_path, save_path=save_path, eval_paths=eval_paths,
                     basic_model=basic_model, batch_size=128, random_status=0,
-                    lr_base=0.1, lr_decay=0.1, lr_decay_steps=[4, 7,], lr_min=1e-5)
+                    lr_base=0.1, lr_decay=0.1, lr_decay_steps=[9, 15,], lr_min=1e-5)
     optimizer = tfa.optimizers.SGDW(learning_rate=0.1, momentum=0.9, weight_decay=5e-4)
 #    optimizer = tf.keras.optimizers.SGD(lr=0.1, momentum=0.9, decay=5e-4)
     sch = [

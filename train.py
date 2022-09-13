@@ -50,7 +50,10 @@ class Train:
         sam_rho=0,
         vpl_start_iters=-1,  # Enable by setting value > 0, like 8000. https://openaccess.thecvf.com/content/CVPR2021/papers/Deng_Variational_Prototype_Learning_for_Deep_Face_Recognition_CVPR_2021_paper.pdf
         vpl_allowed_delta=200,
+        quantization=False,
     ):
+        # quantization
+        self.quantization = quantization
         from inspect import getmembers, isfunction, isclass
         
         # checkpoint setting path
@@ -79,9 +82,8 @@ class Train:
         self.model, self.basic_model, self.save_path, self.inited_from_model, self.sam_rho, self.pretrained = None, None, save_path, False, sam_rho, pretrained
         self.vpl_start_iters, self.vpl_allowed_delta = vpl_start_iters, vpl_allowed_delta
         if model is None and basic_model is None:
-	        model = os.path.join(checkpoint_path, save_path)
+            model = os.path.join(checkpoint_path, save_path)
             logging.info(">>>> Try reload from:", model)
-
         if isinstance(model, str):
             if model.endswith(".h5") and os.path.exists(model):
                 logging.info(">>>> Load model from h5 file: %s..." % model)
@@ -149,7 +151,7 @@ class Train:
             lr_min=lr_min,
             lr_decay_steps=lr_decay_steps,
             lr_warmup_steps=lr_warmup_steps,
-            checkpoint_path=chekepoint_path
+            checkpoint_path=checkpoint_path
         )
         self.gently_stop = None  # may not working for windows
         self.my_evals, self.custom_callbacks = my_evals, []
@@ -410,7 +412,7 @@ class Train:
             use_multiprocessing=True,
             workers=4,
         )
-        print(hist)
+
         logging.info(hist)
 #        h_loss = hist.history['loss']\
 #        h_acc = history['acc']
@@ -541,8 +543,9 @@ class Train:
         logging.info(">>>> My history:")
         self.my_history.print_hist()
         latest_save_path = os.path.join("checkpoints", os.path.splitext(self.save_path)[0] + "_basic_model_latest.h5")
-        logging.info(">>>> Saving latest basic model to:", latest_save_path)
-        self.basic_model.save(latest_save_path)
+        logging.info(">>>> Saving latest basic model to:", str(latest_save_path))
+        if not self.quantization:
+            self.basic_model.save(latest_save_path)
 
     def train(self, train_schedule, initial_epoch=0):
         train_schedule = [train_schedule] if isinstance(train_schedule, dict) else train_schedule

@@ -85,9 +85,13 @@ class My_history(keras.callbacks.Callback):
 
     def print_hist(self):
         logging.info("{")
+        s = ''
         for kk, vv in self.history.items():
             logging.info("  '%s': %s," % (kk, vv))
+            s += "    '%s': %s," % (kk, vv)
         logging.info("}")
+        
+        return s
 
 
 class VPLUpdateQueue(keras.callbacks.Callback):
@@ -252,9 +256,10 @@ def constant_scheduler(epoch, lr_base, lr_decay_steps, decay_rate=0.1, warmup_st
     logging.info("\nLearning rate for iter {} is {}".format(epoch + 1, lr))
     return lr
 
+import time
 
-def basic_callbacks(checkpoint="keras_checkpoints.h5", evals=[], lr=0.001, lr_decay=0.05, lr_min=0, lr_decay_steps=0, lr_warmup_steps=0):
-    checkpoint_base = "checkpoints"
+def basic_callbacks(checkpoint="keras_checkpoints.h5", evals=[], lr=0.001, lr_decay=0.05, lr_min=0, lr_decay_steps=0, lr_warmup_steps=0, checkpoint_path = 'checkpoints'):
+    checkpoint_base = checkpoint_path
     if not os.path.exists(checkpoint_base):
         os.mkdir(checkpoint_base)
     checkpoint = os.path.join(checkpoint_base, checkpoint)

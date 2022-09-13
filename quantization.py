@@ -5,33 +5,35 @@ import evals
 import os
 import pathlib
 import data
+import keras
+import q_evals
 
-path = 'checkpoints/8_6_12H2_r50Prelu/r50sePrelu_emore.h5'
+path = 'checkpoints/8_10_20H/r50serelu_emore.h5'
 save_path = '/'.join(path.split('/')[:-1]) + '/q_model.tflite'
 train_path = '../Datasets/faces_emore_112x112_folders'
 
-model = tf.keras.models.load_model(path, compile=False, custom_objects={"NormDense": models.NormDense})
-model.summary()
 
-exit()
-
+# model = tf.keras.models.load_model(path, compile=False, custom_objects={"NormDense": models.NormDense})
 
 if not os.path.exists(save_path):
 
-    model = tf.keras.models.load_model(path, compile=False,
-            custom_objects={"NormDense": models.NormDense})
-    #model.summary()
+    model = tf.keras.models.load_model(path, compile=False,)
 
+    layer = model.layers[:-1]
+    model = keras.Model(model.inputs,layer[-1].output)
+    model.summary()
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
 
     def representative_data_gen():
+        
         ds, steps_per_epoch = data.prepare_dataset(train_path)
         x = None
+
         for d in ds:
             x = d
             break
-        print(type(x))
+
         yield [np.array(x[0], dtype=np.float32)]
 
     converter.representative_dataset = representative_data_gen
@@ -53,24 +55,18 @@ if not os.path.exists(save_path):
 
     saves_path = pathlib.Path(save_path)
     saves_path.write_bytes(tflite_model)
-    exit()
 
 else:
     interpreter = tf.lite.Interpreter(model_path=save_path)
 
-interpreter.allocate_tensors()
+#interpreter.allocate_tensors()
 
-input_details = interpreter.get_input_details()
-output_details = interpreter.get_output_details()
+model = tf.keras.models.load_model(path, compile=False,)
 
-print(input_details[0]['dtype'])
-print(output_details[0]['dtype'])
+layer = model.layers[:-1]
+model = keras.Model(model.inputs,layer[-1].output)
+model.save('/'.join(path.split('/')[:-1]) + '/cutting.h5')
 
-print(input_details[0]['index'])
-print(output_details[0]['index'])
 
-print(input_details)
-print(output_details)
-
-#ee = evals.eval_callback(tflite_model, '../Datasets/faces_emore/lfw.bin')
-#ee.on_epoch_end(0)
+ee = q_evals.eval_callback(interpreter, '../Datasets/faces_emore/lfw.bin')
+ee.on_epoch_end(0)

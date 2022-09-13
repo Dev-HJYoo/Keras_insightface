@@ -16,7 +16,7 @@ from scipy import interpolate
 import sklearn
 from sklearn.decomposition import PCA
 import logging
-import models
+#import models
 import keras
 from matplotlib import pyplot as plt
 
@@ -62,10 +62,37 @@ class eval_callback(tf.keras.callbacks.Callback):
             
             #plt.show()
             #i += 1
-            emb = self.basic_model(img_batch)
-            if self.flip:
-                emb_f = self.basic_model(tf.image.flip_left_right(img_batch))
-                emb = emb + emb_f
+#            input_details = self.basic_model.get_input_details()[0]
+#            output_details = self.basic_model.get_output_details()[0]
+#
+#            if input_details['dtype'] == np.uint8:
+#                input_scale, input_zero_point = input_details['quantization']
+#                img_batch = tf.convert_to_tensor([x/input_scale + input_zero_point for x in img_batch], dtype=tf.uint8)
+#
+#                self.basic_model.resize_tensor_input(0, img_batch.shape)
+#                self.basic_model.allocate_tensors()
+#                self.basic_model.set_tensor(input_details['index'], img_batch)
+#                self.basic_model.invoke()
+#                output = self.basic_model.get_tensor(output_details['index'])
+            input_details = self.basic_model.get_input_details()[0]
+            output_details = self.basic_model.get_output_details()[0]
+            
+            
+            
+            input_scale, input_zero_point = input_details['quantization']
+            img_batch = tf.convert_to_tensor([x/input_scale + input_zero_point for x in img_batch], dtype=tf.uint8)
+
+            self.basic_model.resize_tensor_input(0, img_batch.shape)
+            self.basic_model.allocate_tensors()
+            self.basic_model.set_tensor(input_details['index'], img_batch)
+            self.basic_model.invoke()
+            output = self.basic_model.get_tensor(output_details['index'])
+                
+            
+            emb = output
+            #if self.flip:
+            #    emb_f = self.basic_model(tf.image.flip_left_right(img_batch))
+            #    emb = emb + emb_f
             embs.extend(np.array(emb))
         return np.array(embs)
 
@@ -112,28 +139,29 @@ class eval_callback(tf.keras.callbacks.Callback):
         
         # embedding vectors
         self.embs = embs
+        print('embs: ', embs)
         embs = normalize(embs) # shape (N, embedding_vector)
+        print('norm embsL ', embs)
         
         # pair(a,b)
         embs_a = embs[::2] 
         embs_b = embs[1::2]
         
+        print('embs_a: ', embs_a)
+        print('embs_b: ', embs_b) 
+        
         # distance between a and b
         dists = (embs_a * embs_b).sum(1)
         
+        print('dist: ', dists)
+        
         # dists = half_split_weighted_cosine_similarity_11(embs_a, embs_b)
-        print(dists)
-        print(dists.shape)
-        print(dists[self.test_issame[: dists.shape[0]]])
-        print(self.test_issame[:dists.shape[0]])
-        print(self.test_issame[:dists.shape[0]].shape)
-        print(dists[False])
         
         
         tt = np.sort(dists[self.test_issame[: dists.shape[0]]])
         ff = np.sort(dists[np.logical_not(self.test_issame[: dists.shape[0]])])
         self.tt, self.ff = tt, ff
-        print('tt: {}\nff: {}'.format(self.tt, self.ff))
+
         t_steps = int(0.1 * ff.shape[0])
         
         acc_count = np.array([(tt > vv).sum() + (ff <= vv).sum() for vv in ff[-t_steps:]])
@@ -344,3 +372,4 @@ elif __name__ == "__test__":
 
     mm = teacher_model_interf_wrapper("../models/GhostNet_x1.3_Arcface_Epoch_24.pth")
     evals.eval_callback(lambda imm: mm(imm * 128 + 127.5), "/datasets/ms1m-retinaface-t1/agedb_30.bin").on_epoch_end()
+

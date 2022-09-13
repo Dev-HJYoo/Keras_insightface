@@ -2,7 +2,7 @@ import plot
 
 # choose_accuracy
 
-f = ['checkpoints/8_7_16H2_r50prelu/r50relu_emore_hist.json']
+f = ['checkpoints/8_30_15H/r50_emore_hist.json']
 
 save_path = '/'.join(f[0].split('/')[:-1])
 print(save_path)
