@@ -34,7 +34,7 @@ def pre_process_folder(data_path, image_names_reg=None, image_classes_rule=None)
         else:
             # dataset with embedding values
             image_names, image_classes, embeddings = aa["image_names"], aa["image_classes"], aa["embeddings"]
-        logging.info(">>>> reloaded from dataset backup:", str(dest_pickle))
+        #logging.info(">>>> reloaded from dataset backup:", str(dest_pickle[0]))
     else:
         if not os.path.exists(data_path):
             logging.info(">>>> [Error] data_path not exists, data_path:", data_path)
@@ -297,6 +297,7 @@ def prepare_dataset(
     shuffle_buffer_size=None,
     is_train=True,
     teacher_model_interf=None,
+    fine_tuning=False,
 ):
     AUTOTUNE = tf.data.experimental.AUTOTUNE
     image_names, image_classes, embeddings, classes, _ = pre_process_folder(data_path, image_names_reg, image_classes_rule)
@@ -333,6 +334,7 @@ def prepare_dataset(
     else:
         ds = tf.data.Dataset.from_tensor_slices((image_names, image_classes)).shuffle(buffer_size=total_images)
         process_func = lambda imm, label: (tf_imread(imm), tf.one_hot(label, depth=classes, dtype=tf.int32))
+        
 
     ds = ds.map(process_func, num_parallel_calls=AUTOTUNE)
 

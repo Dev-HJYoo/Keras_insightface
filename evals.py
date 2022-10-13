@@ -24,6 +24,12 @@ class eval_callback(tf.keras.callbacks.Callback):
     def __init__(self, basic_model, test_bin_file, batch_size=128, save_model=None, eval_freq=1, flip=True, PCA_acc=False):
         super(eval_callback, self).__init__()
         bins, issame_list = np.load(test_bin_file, encoding="bytes", allow_pickle=True)
+        
+        if 'calfw.bin' in test_bin_file or 'cplfw.bin' in test_bin_file:
+            for i in range(len(bins)):
+                bins[i] = tf.ragged.constant(bins[i])
+            
+            
         ds = tf.data.Dataset.from_tensor_slices(bins)
         _imread = lambda xx: (tf.cast(tf.image.decode_image(xx, channels=3), "float32") - 127.5) * 0.0078125
         ds = ds.map(_imread)
@@ -54,19 +60,37 @@ class eval_callback(tf.keras.callbacks.Callback):
         #print('size', self.test_issame.shape)
         for img_batch in tqdm(self.ds, "Evaluating " + self.test_names, total=self.steps):
             # view dataset
-            #plt.figure(figsize=(6,6))
-            #for idx in range(2):
-            #  plt.subplot(1,2, idx+1)
-            #  plt.imshow(img_batch[idx])
-            #  plt.title(str(self.test_issame[i*128]))
+#            print(self.test_issame.shape)
+#            print(self.test_issame)
+#            plt.figure(figsize=(6,6))
+#            for idx in range(4):
+#              plt.subplot(1,4, idx+1)
+#              plt.imshow(img_batch[idx])
+#              plt.title(str(self.test_issame[i*128]))
+#              
+#            
+#            plt.show()
+            i += 1
             
-            #plt.show()
-            #i += 1
             emb = self.basic_model(img_batch)
             if self.flip:
                 emb_f = self.basic_model(tf.image.flip_left_right(img_batch))
                 emb = emb + emb_f
+            
             embs.extend(np.array(emb))
+            
+            # image save
+#            img_batch = (img_batch.numpy() / 0.0078125 + 127.5) / 255.
+#            
+#            
+#            for j in range(emb.shape[0]):
+#                plt.imsave('save/{}_{}.png'.format(i, j), img_batch[j])
+#
+#        files = open('s.txt', 'w')
+#        for i in self.test_issame:
+#            files.write(str(i) + '\n')
+        total = 0
+
         return np.array(embs)
 
     def __do_predict_distribute__(self):
@@ -122,25 +146,37 @@ class eval_callback(tf.keras.callbacks.Callback):
         dists = (embs_a * embs_b).sum(1)
         
         # dists = half_split_weighted_cosine_similarity_11(embs_a, embs_b)
-        print(dists)
-        print(dists.shape)
-        print(dists[self.test_issame[: dists.shape[0]]])
-        print(self.test_issame[:dists.shape[0]])
-        print(self.test_issame[:dists.shape[0]].shape)
-        print(dists[False])
+#        print('dists', dists)
+#        print('dists.shape', dists.shape)
+#        print('dists[self.test_issame[: dists.shape[0]]]', dists[self.test_issame[: dists.shape[0]]])
+#        print('self.test_issame[:dists.shape[0]]', self.test_issame[:dists.shape[0]])
+#        print(self.test_issame[:dists.shape[0]].shape)
+#        print('len(self.test_issame)', len(self.test_issame))
         
         
-        tt = np.sort(dists[self.test_issame[: dists.shape[0]]])
-        ff = np.sort(dists[np.logical_not(self.test_issame[: dists.shape[0]])])
+        tt = np.sort(dists[self.test_issame[: dists.shape[0]]]) # true pair 모음 
+        ff = np.sort(dists[np.logical_not(self.test_issame[: dists.shape[0]])]) # false pair 모음 
         self.tt, self.ff = tt, ff
-        print('tt: {}\nff: {}'.format(self.tt, self.ff))
-        t_steps = int(0.1 * ff.shape[0])
+#        print('tt: {}\nff: {}'.format(self.tt, self.ff))
+#        print('ff.shape', ff.shape)
+        t_steps = int(0.1 * ff.shape[0]) # 뒤 300개는false pair 예제임
         
-        acc_count = np.array([(tt > vv).sum() + (ff <= vv).sum() for vv in ff[-t_steps:]])
+        # acc_count는 threshold를 조절하면서 해당 threshold에서 정답 갯수를 세는 것 
+        # 이후에 acc가 제일 높은 dist를 설정하고 그것을 threshold로 설정한다.
+        acc_count = np.array([(tt > vv).sum() + (ff <= vv).sum() for vv in ff[-t_steps:]]) 
         acc_max_indx = np.argmax(acc_count)
         acc_max = acc_count[acc_max_indx] / dists.shape[0]
         self.acc_thresh = ff[acc_max_indx - t_steps]
         self.cur_acc = acc_max
+#        print('ff[-t_steps:]', ff[-t_steps:].shape)
+#        print(acc_max_indx)
+#        print(t_steps)
+#        print(self.acc_thresh)
+#        print(self.cur_acc)
+#        print(acc_count)
+#        print(len(acc_count))
+#        print(acc_max)
+#        
         
         if self.PCA_acc:
             _, _, accuracy, val, val_std, far = evaluate(embs, self.test_issame, nrof_folds=10)

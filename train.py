@@ -15,11 +15,13 @@ from tensorflow import keras
 gpus = tf.config.experimental.list_physical_devices("GPU")
 for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu, True)
-strategy = tf.distribute.MirroredStrategy(devices=['/gpu:0','/gpu:1','/gpu:2','/gpu:3'])
+strategy = tf.distribute.MirroredStrategy(devices=['/gpu:0','/gpu:1','/gpu:2','/gpu:3',])
 #print(gpus)
 #print(strategy)
 #strategy = tf.distribute.OneDeviceStrategy(device="/gpu:0")
 import logging
+import q_models
+from backbones import q_resnet
 
 class Train:
     def __init__(
@@ -51,9 +53,14 @@ class Train:
         vpl_start_iters=-1,  # Enable by setting value > 0, like 8000. https://openaccess.thecvf.com/content/CVPR2021/papers/Deng_Variational_Prototype_Learning_for_Deep_Face_Recognition_CVPR_2021_paper.pdf
         vpl_allowed_delta=200,
         quantization=False,
+        fine_tuning=False,
     ):
         # quantization
         self.quantization = quantization
+        
+        # fine-tuning
+        self.fine_tuning = fine_tuning
+        
         from inspect import getmembers, isfunction, isclass
         
         # checkpoint setting path
@@ -66,6 +73,8 @@ class Train:
         else:
             checkpoint_path += '2'
             os.mkdir(checkpoint_path)
+            
+        self.checkpoint_path = checkpoint_path
         #logging
         logging.basicConfig(filename=checkpoint_path + '/' + save_path.split('.')[0] + '.log',
             level=logging.DEBUG)
@@ -77,7 +86,11 @@ class Train:
         #tf.compat.v1.logging.set_verbosity(tf.logging.INFO)
 
         custom_objects.update(dict([ii for ii in getmembers(losses) if isfunction(ii[1]) or isclass(ii[1])]))
-        custom_objects.update({"NormDense": models.NormDense})
+        if quantization:
+            custom_objects.update({"q_NormDense": q_models.q_NormDense})
+        
+        else:
+            custom_objects.update({"NormDense": models.NormDense})
 
         self.model, self.basic_model, self.save_path, self.inited_from_model, self.sam_rho, self.pretrained = None, None, save_path, False, sam_rho, pretrained
         self.vpl_start_iters, self.vpl_allowed_delta = vpl_start_iters, vpl_allowed_delta
@@ -128,7 +141,7 @@ class Train:
                 if hasattr(ii, "kernel_regularizer") and isinstance(ii.kernel_regularizer, keras.regularizers.L2):
                     l2_weight_decay = ii.kernel_regularizer.l2
                     break
-            logging.info(">>>> L2 regularizer value from basic_model:", l2_weight_decay)
+            logging.info(">>>> L2 regularizer value from basic_model:", str(l2_weight_decay))
             output_weight_decay *= l2_weight_decay * 2
         self.output_weight_decay = output_weight_decay
 
@@ -184,6 +197,7 @@ class Train:
             "mixup_alpha": self.mixup_alpha,
             "teacher_model_interf": self.teacher_model_interf,
         }
+        
 
         if is_offline_triplet:
             logging.info(">>>> Init offline triplet dataset...")
@@ -208,6 +222,8 @@ class Train:
             self.is_triplet_dataset = False
         if self.train_ds is None:
             return
+            
+        
 
         if tf.distribute.has_strategy():
             self.train_ds = self.train_ds.with_options(self.data_options)
@@ -248,7 +264,7 @@ class Train:
                 logging.info(">>>> Use default optimizer:", self.default_optimizer)
                 self.optimizer = self.default_optimizer
         else:
-            logging.info(">>>> Use specified optimizer:", optimizer)
+            logging.info(">>>> Use specified optimizer:", str(optimizer))
             self.optimizer = optimizer
 
         try:
@@ -300,8 +316,12 @@ class Train:
             if vpl_start_iters > 0:
                 batch_size = self.batch_size_per_replica
                 arcface_logits = models.NormDenseVPL(batch_size, self.classes, output_kernel_regularizer, **arc_kwargs, **vpl_kwargs, dtype="float32")
+                
+            elif self.quantization:
+                arcface_logits = q_models.quantize_annotate_layer(q_models.q_NormDense(self.classes, output_kernel_regularizer, **arc_kwargs, dtype="float32"), q_resnet.DefaultBNQuantizeConfig())
             else:
                 arcface_logits = models.NormDense(self.classes, output_kernel_regularizer, **arc_kwargs, dtype="float32")
+            
 
             if self.model != None and "_embedding" not in self.model.output_names[-1]:
                 arcface_logits.build(embedding.shape)
@@ -395,12 +415,16 @@ class Train:
         return emb_loss_names, emb_loss_weights
 
     def __basic_train__(self, epochs, initial_epoch=0):
+    
+        
 	    # logging model summary
         stringlist = []
         self.model.summary(print_fn=lambda x: stringlist.append(x))
         summary = "\n".join(stringlist)
         logging.info(summary)
         self.model.compile(optimizer=self.optimizer, loss=self.cur_loss, metrics=self.metrics, loss_weights=self.loss_weights)
+        print(self.optimizer, self.cur_loss, self.metrics, self.loss_weights)
+        
         hist = self.model.fit(
             self.train_ds,
             epochs=epochs,
@@ -414,31 +438,8 @@ class Train:
         )
 
         logging.info(hist)
-#        h_loss = hist.history['loss']\
-#        h_acc = history['acc']
-#        h_val_loss = history['val_loss']
-#        h_val_acc = history['val_acc']
-#        logging.warning(h_loss)
-#        logging.warning(h_acc)
-#        logging.warning(h_val_loss)
-#        logging.warning(h_cal_acc)
-#        his = [h_loss, h_acc, h_val_loss, h_val_acc]
         logging.info(self.my_history.print_hist())
-        def plot_hist(h):
-            h_l, h_a, h_v_l, h_v_a = his
-            import matplotlib.pyplot as plt
-            fig, loss_ax = plt.subplots()
-            acc_ax = loss_ax.twinx()
-            loss_ax.plot(h_l, 'y', label='train loss')
-            loss_ax.plot(v_l, 'r', label='val loss')
-            loss_ax.set_xlabel('epoch')
-            loss_ax.set_ylabel('loss')
-            loss_ax.legend(loc='upper left')
-            acc_ax.plot(h_a, 'b', label='train acc')
-            acc_ax.plot(h_v_a, 'g', label='val acc')
-            acc_ax.set_ylabel('accuracy')
-            acc_ax.legend(loc='upper left')
-            plt.savefig(self.folder_path + '/train.png')
+
 
     def reset_dataset(self, data_path=None):
         self.train_ds = None
@@ -471,6 +472,11 @@ class Train:
             type = self.__init_type_by_loss__(loss)
         logging.info(">>>> Train %s..." % type)
         self.__init_dataset__(type, emb_loss_names)
+        
+        # fine_tuning
+        if self.fine_tuning:
+            pass
+            
         if self.train_ds is None:
             logging.info(">>>> [Error]: train_ds is None.")
             if self.model is not None:
@@ -493,6 +499,7 @@ class Train:
         if not self.inited_from_model:
             header_append_norm = isinstance(loss, losses.MagFaceLoss) or isinstance(loss, losses.AdaFaceLoss)
             self.__init_model__(type, lossTopK, header_append_norm)
+            
 
         # loss_weights
         self.cur_loss, self.loss_weights = [loss], {ii: lossWeight for ii in self.model.output_names}
@@ -542,10 +549,11 @@ class Train:
         logging.info(">>>> Train %s DONE!!! epochs = %s, model.stop_training = %s" % (type, self.model.history.epoch, self.model.stop_training))
         logging.info(">>>> My history:")
         self.my_history.print_hist()
-        latest_save_path = os.path.join("checkpoints", os.path.splitext(self.save_path)[0] + "_basic_model_latest.h5")
+        latest_save_path = os.path.join(self.checkpoint_path, os.path.splitext(self.save_path)[0] + "_basic_model_latest.h5")
+        print(latest_save_path)
         logging.info(">>>> Saving latest basic model to:", str(latest_save_path))
-        if not self.quantization:
-            self.basic_model.save(latest_save_path)
+        self.basic_model.save(latest_save_path)
+        
 
     def train(self, train_schedule, initial_epoch=0):
         train_schedule = [train_schedule] if isinstance(train_schedule, dict) else train_schedule

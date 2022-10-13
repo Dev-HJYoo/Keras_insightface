@@ -147,15 +147,34 @@ def buildin_models(
 
     if output_layer == "E":
         """ Fully Connected """
-        def E(nn):
-          nn = quantize_annotate_layer(keras.layers.BatchNormalization(momentum=bn_momentum, epsilon=bn_epsilon, name="E_batchnorm"), q_resnet.DefaultBNQuantizeConfig())(nn)
-          if dropout > 0 and dropout < 1:
-              nn = keras.layers.Dropout(dropout)(nn)
+#        def E(nn):
+#          nn = quantize_annotate_layer(keras.layers.BatchNormalization(momentum=bn_momentum, epsilon=bn_epsilon, name="E_batchnorm"), q_resnet.DefaultBNQuantizeConfig())(nn)
+#          if dropout > 0 and dropout < 1:
+#              nn = keras.layers.Dropout(dropout)(nn)
+#              #nn = quantize_annotate_layer(keras.layers.Dropout(dropout), DefaultBNQuantizeConfig())(nn)
+#          #nn = quantize_annotate_layer(keras.layers.Flatten(name="E_flatten"), DefaultDenseQuantizeConfig())(nn)
+#          nn = keras.layers.Flatten(name="E_flatten")(nn)
+#          nn = quantize_annotate_layer(keras.layers.Dense(emb_shape, use_bias=use_bias, kernel_initializer="glorot_normal", name="E_dense"), q_resnet.DefaultDenseQuantizeConfig())(nn)
+#          return nn
+#        def E(nn):
+#          quantize_annotate_layer(keras.layers.BatchNormalization(momentum=bn_momentum, epsilon=bn_epsilon, name="E_batchnorm"), q_resnet.DefaultBNQuantizeConfig())(nn)
+#          if dropout > 0 and dropout < 1:
+#              nn = keras.layers.Dropout(dropout)(nn)
+#              #nn = quantize_annotate_layer(keras.layers.Dropout(dropout), DefaultBNQuantizeConfig())(nn)
+#          #nn = quantize_annotate_layer(keras.layers.Flatten(name="E_flatten"), DefaultDenseQuantizeConfig())(nn)
+#          nn = keras.layers.Flatten(name="E_flatten")(nn)
+#          nn = keras.layers.Dense(emb_shape, use_bias=use_bias, kernel_initializer="glorot_normal", name="E_dense")(nn)
+#          return nn
+#          nn = E(nn)
+          
+        quantize_annotate_layer(keras.layers.BatchNormalization(momentum=bn_momentum, epsilon=bn_epsilon, name="E_batchnorm"), q_resnet.DefaultBNQuantizeConfig())(nn)
+        if dropout > 0 and dropout < 1:
+            nn = keras.layers.Dropout(dropout)(nn)
               #nn = quantize_annotate_layer(keras.layers.Dropout(dropout), DefaultBNQuantizeConfig())(nn)
-          #nn = quantize_annotate_layer(keras.layers.Flatten(name="E_flatten"), DefaultDenseQuantizeConfig())(nn)
-          nn = keras.layers.Flatten(name="E_flatten")(nn)
-          nn = quantize_annotate_layer(keras.layers.Dense(emb_shape, use_bias=use_bias, kernel_initializer="glorot_normal", name="E_dense"), q_resnet.DefaultDenseQuantizeConfig())(nn)
-          return nn
+          
+        nn = keras.layers.Flatten(name="E_flatten")(nn)
+        nn = quantize_annotate_layer(keras.layers.Dense(emb_shape, use_bias=use_bias, kernel_initializer="glorot_normal", name="E_dense"), q_resnet.DefaultDenseQuantizeConfig())(nn)
+
 #          nn = keras.layers.BatchNormalization(momentum=bn_momentum, epsilon=bn_epsilon, name="E_batchnorm")(nn)
 #          if dropout > 0 and dropout < 1:
 #              nn = keras.layers.Dropout(dropout)(nn)
@@ -164,7 +183,6 @@ def buildin_models(
 #          
 #          return nn
           
-        nn = E(nn)
     elif output_layer == "GAP":
         """ GlobalAveragePooling2D """
         nn = keras.layers.BatchNormalization(momentum=bn_momentum, epsilon=bn_epsilon, name="GAP_batchnorm")(nn)
