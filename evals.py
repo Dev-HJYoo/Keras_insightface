@@ -176,6 +176,7 @@ class eval_callback(tf.keras.callbacks.Callback):
 #        print(acc_count)
 #        print(len(acc_count))
 #        print(acc_max)
+
 #        
         
         if self.PCA_acc:
@@ -201,7 +202,7 @@ class eval_callback(tf.keras.callbacks.Callback):
                 logging.info("Saving model to: %s" % (save_path))
                 self.basic_model.save(save_path, include_optimizer=False)
 
-
+        return self.cur_acc, self.acc_thresh
 def half_split_weighted_cosine_similarity_11(aa, bb):
     half = aa.shape[-1] // 2
     bb = bb[: aa.shape[0]]
